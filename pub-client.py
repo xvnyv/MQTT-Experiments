@@ -8,7 +8,7 @@ import socket
 
 N = 100
 stats_fname = "qos-stats.txt"
-hostname = "ec2-18-118-33-83.us-east-2.compute.amazonaws.com"
+hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
 port = 1883
 keepalive = 60
 
@@ -85,6 +85,7 @@ if __name__ == "__main__":
     for seq_num in range(1, N + 1):
         while not sent[seq_num - 1]:
             try:
+                # switch to using threading.Timer to send at an interval
                 cur_time = time.time_ns() // (10 ** 6)
                 msg = client.publish("test", f"{seq_num} {cur_time}", qos)
                 msg.wait_for_publish()

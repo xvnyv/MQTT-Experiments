@@ -9,7 +9,7 @@ import argparse
 
 N = 100
 stats_fname = "qos-stats.txt"
-hostname = "ec2-18-118-33-83.us-east-2.compute.amazonaws.com"
+hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
 port = 1883
 keepalive = 60
 
@@ -86,6 +86,7 @@ if __name__ == "__main__":
                 connected = True
             except socket.timeout:
                 pass
+        client.loop_forever()
     except KeyboardInterrupt:
         data_fname = (
             datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
