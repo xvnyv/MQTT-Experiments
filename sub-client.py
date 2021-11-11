@@ -20,7 +20,7 @@ keepalive = 60
 def periodic_disconnect(client, userdata):
     """Periodically disconnects the client based on the specified disconnect_perc. Ends on KeyboardInterrupt."""
     while not userdata["disconnect_event"].is_set():
-        time.sleep(5)
+        time.sleep(userdata["disconnect_interval"])
         n = random.uniform(0, 1)
         if n <= userdata["disconnect_perc"]:
             client.disconnect()
@@ -38,6 +38,7 @@ def on_connect(client, userdata, flags, reason, rc):
     #   We want disconnections to happen (ie. disconnect_perc > 0) 
     #   Thread has not already been created and started
     if userdata["disconnect_thread"] is None and userdata["disconnect_perc"] > 0:
+        userdata["disconnect_event"] = threading.Event()
         userdata["disconnect_thread"] = threading.Thread(target=periodic_disconnect, args=[client, userdata])
         userdata["disconnect_thread"].start()
 
@@ -68,26 +69,34 @@ if __name__ == "__main__":
     # Process arguments
     parser = argparse.ArgumentParser(
         prog="sub-client",
-        usage="Usage: python sub-client.py <qos> <net_cond> <disconnect_perc>\nDefault: qos=0, net_cond=good, disconnect_perc=0",
+        usage="Usage: python sub-client.py <qos> <net_cond> <disconnect_perc> <disconnect_duration>\nDefault: qos=0, net_cond=good, disconnect_perc=0, disconnect_duration=10",
     )
     parser.add_argument("--qos", action="store", type=int, default=0, required=False)
+    # might want to change network_cond to something more useful (eg. x% unstable network, x% packet loss, x% limited bandwidth)
     parser.add_argument(
         "--net_cond", action="store", type=str, default="good", required=False
     )
     parser.add_argument("--disconnect_perc", action="store", type=float, default=0, required=False)
+    parser.add_argument("--disconnect_duration", action="store", type=int, default=10, required=False, help="Duration before client initiates reconnect after disconnecting in seconds")
+    parser.add_argument("--disconnect_interval", action="store", type=int, default=10, required=False, help="Minimum interval before next disconnect will be called in seconds")
     args = parser.parse_args()
 
     qos = args.qos
     net_cond = args.net_cond
+    # arguments for periodic disconnect
     disconnect_perc = args.disconnect_perc
+    disconnect_duration = args.disconnect_duration
+    disconnect_interval = args.disconnect_interval
 
     try:
         # Initialise userdata to be passed to client callbacks
         userdata = {}
         data = []
         userdata["data"] = data
+        # variables for periodic disconnect 
         userdata["disconnect_perc"] = disconnect_perc
-        userdata["disconnect_event"] = threading.Event()
+        userdata["disconnect_interval"] = disconnect_interval
+        userdata["disconnect_event"] = None
         userdata["disconnect_thread"] = None
         
         # Initialise client and callbacks
@@ -117,9 +126,9 @@ if __name__ == "__main__":
             
         # Loop forever with periodic disconnects and reconnects
         while True:
-            print(f"Active threads: {threading.enumerate()}")
             client.loop_forever()
-            # client disconnects and loop stops
+            # client disconnects and loop stops --> initiate reconnect after disconnect_duration
+            time.sleep(disconnect_duration)
             connected = False
             while not connected:
                 try:
@@ -166,7 +175,7 @@ if __name__ == "__main__":
                 stats_f.write(f"Data file: {data_fname}\n")
                 stats_f.write(f"Number of packets sent: {N}\n")
                 stats_f.write(f"Average end-to-end delay: {total_diff/len(data)}ms\n")
-                stats_f.write(f"Packet loss: {N-len(data)/N*100}%\n")
+                stats_f.write(f"Packet loss: {(N-len(data))/N*100}%\n")
                 stats_f.write("\n\n")
         
         print("Subscriber closed successfully")
