@@ -1,34 +1,55 @@
-# import paho.mqtt.client as mqtt
-import argparse
 import paho.mqtt.client as mqtt
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
+from paho.mqtt.reasoncodes import ReasonCodes
+import argparse
 import time
 import socket
+from typing import Dict, Any, List
 
-N = 100
+N = 50
 stats_fname = "qos-stats.txt"
 hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
 port = 1883
 keepalive = 60
 
 
-def on_connect(client, userdata, flags, reason, rc):
-    print("Connected with result code " + str(rc))
+def on_connect(
+    client: mqtt.Client,
+    userdata: Dict[str, Any],
+    flags: Dict[str, Any],
+    reason: ReasonCodes,
+    properties: Properties,
+):
+    print("Connected with reason code " + reason.getName())
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     userdata["connected"] = True
 
 
-def on_publish(client, userdata, mid):
+def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
     """QoS 0: called when message has left the publisher
     QoS 1 & 2: called when handshakes have completed"""
     p_time = time.time_ns() // (10 ** 6)
-    userdata["published_time"][mid] = p_time
+    if userdata["data"].get(mid, None) is None:
+        # publishing interval not over yet
+        userdata["data"][mid] = {
+            "publishing_time": -1,
+            "published_time": p_time,
+            "time_diff": -1,
+            "seq_num": -1,
+            "qos": -1,
+        }
+    else:
+        # publishing interval over
+        userdata["data"][mid]["published_time"] = p_time
+        userdata["data"][mid]["time_diff"] = (
+            p_time - userdata["data"][mid]["publishing_time"]
+        )
 
 
-def on_log(client, userdata, level, buf):
+def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
     print(f"[{level}] {buf}")
 
 
@@ -44,13 +65,16 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    qos = args.qos
-    net_cond = args.net_cond
+    qos: int = args.qos
+    net_cond: str = args.net_cond
 
     # initialise
-    sent = [False] * N
-    published_time = {}
-    userdata = {"connected": False, "published_time": published_time}
+    sent: List[bool] = [False] * N
+    data: Dict[int, Dict[str, Any]] = {}
+    userdata: Dict[str, Any] = {
+        "connected": False,
+        "data": data,
+    }
     client = mqtt.Client(
         client_id="test-pub",
         userdata=userdata,
@@ -61,15 +85,15 @@ if __name__ == "__main__":
     client.on_publish = on_publish
     client.on_log = on_log
 
-    data = []
-
     # connect to host
     connected = False
     properties = Properties(PacketTypes.CONNECT)
     properties.SessionExpiryInterval = 30
     while not connected:
         try:
-            client.connect(hostname, port, keepalive, clean_start=False, properties=properties)
+            client.connect(
+                hostname, port, keepalive, clean_start=False, properties=properties
+            )
             connected = True
         except socket.timeout:
             print("connection socket timeout, retrying...")
@@ -86,8 +110,10 @@ if __name__ == "__main__":
         while not sent[seq_num - 1]:
             try:
                 # switch to using threading.Timer to send at an interval
-                cur_time = time.time_ns() // (10 ** 6)
-                msg = client.publish("test", f"{seq_num} {cur_time}", qos)
+                cur_time: int = time.time_ns() // (10 ** 6)
+                msg: mqtt.MQTTMessageInfo = client.publish(
+                    "test", f"{seq_num} {cur_time}", qos
+                )
                 time.sleep(1)
                 # msg.wait_for_publish()
 
@@ -100,22 +126,31 @@ if __name__ == "__main__":
                     time.sleep(1)
                     # msg.wait_for_publish()
 
+                if data.get(msg.mid, None) is None:
+                    # on_publish() not called yet
+                    data[msg.mid] = {
+                        "publishing_time": cur_time,
+                        "published_time": -1,
+                        "time_diff": -1,
+                        "seq_num": seq_num,
+                        "qos": qos,
+                    }
+                else:
+                    # on_publish() already called
+                    data[msg.mid]["publishing_time"] = cur_time
+                    data[msg.mid]["seq_num"] = seq_num
+                    data[msg.mid]["qos"] = qos
+                    data[msg.mid]["time_diff"] = (
+                        data[msg.mid]["published_time"] - cur_time
+                    )
+
                 print(f"Message {msg.mid} with seq num {seq_num} is published")
                 sent[seq_num - 1] = True
-
-                cur_data = {
-                    "publishing_time": cur_time,
-                    "published_time": published_time[msg.mid],
-                    "time_diff": published_time[msg.mid] - cur_time,
-                    "seq_num": seq_num,
-                    "qos": qos,
-                }
-                data.append(cur_data)
             except ValueError:
                 time.sleep(1)
 
-    total_diff = 0
-    for pkt in data:
+    total_diff: int = 0
+    for mid, pkt in data.items():
         total_diff += pkt["time_diff"]
 
     with open(stats_fname, "a") as stats_f:
