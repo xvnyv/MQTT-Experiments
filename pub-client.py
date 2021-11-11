@@ -88,7 +88,8 @@ if __name__ == "__main__":
                 # switch to using threading.Timer to send at an interval
                 cur_time = time.time_ns() // (10 ** 6)
                 msg = client.publish("test", f"{seq_num} {cur_time}", qos)
-                msg.wait_for_publish()
+                time.sleep(1)
+                # msg.wait_for_publish()
 
                 while msg.rc != mqtt.MQTT_ERR_SUCCESS:
                     print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
@@ -96,7 +97,8 @@ if __name__ == "__main__":
 
                     cur_time = time.time_ns() // (10 ** 6)
                     msg = client.publish("test", f"{seq_num} {cur_time}", qos)
-                    msg.wait_for_publish()
+                    time.sleep(1)
+                    # msg.wait_for_publish()
 
                 print(f"Message {msg.mid} with seq num {seq_num} is published")
                 sent[seq_num - 1] = True
