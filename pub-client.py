@@ -6,8 +6,9 @@ import argparse
 import time
 import socket
 from typing import Dict, Any, List
+import os
+import yaml
 
-N = 50
 stats_fname = "qos-stats.txt"
 hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
 port = 1883
@@ -59,22 +60,37 @@ if __name__ == "__main__":
         prog="sub-client",
         usage="Usage: python sub-client.py <qos> <network-cond>\nDefault: qos=0, network_cond=good",
     )
-    parser.add_argument("--qos", action="store", type=int, default=0, required=False)
+    # parser.add_argument("--qos", action="store", type=int, default=0, required=False)
+    # parser.add_argument(
+    #     "--net_cond", action="store", type=str, default="good", required=False
+    # )
     parser.add_argument(
-        "--net_cond", action="store", type=str, default="good", required=False
+        "-f",
+        "--file",
+        help="Path to file with input variables",
+        required=False,
+        default="",
     )
     args = parser.parse_args()
 
-    qos: int = args.qos
-    net_cond: str = args.net_cond
-
-    # initialise
-    sent: List[bool] = [False] * N
+    # initialise data
     data: Dict[int, Dict[str, Any]] = {}
-    userdata: Dict[str, Any] = {
-        "connected": False,
-        "data": data,
-    }
+    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50}
+    sent: List[bool] = [False] * userdata["total_packets"]
+
+    if args.file:
+        if not os.path.exists(args.file):
+            print(f"{args.file} is not a valid path. Using default values.")
+        else:
+            with open(args.file, "r") as input_f:
+                input_values = yaml.safe_load(input_f)
+                if input_values.get("publisher", None) is not None:
+                    userdata = {**userdata, **input_values["publisher"]}
+                if input_values.get("shared", None) is not None:
+                    userdata = {**userdata, **input_values["shared"]}
+
+    print(f"userdata: {userdata}")
+
     client = mqtt.Client(
         client_id="test-pub",
         userdata=userdata,
@@ -106,13 +122,13 @@ if __name__ == "__main__":
         pass
 
     # publish N messages
-    for seq_num in range(1, N + 1):
+    for seq_num in range(1, userdata["total_packets"] + 1):
         while not sent[seq_num - 1]:
             try:
                 # switch to using threading.Timer to send at an interval
                 cur_time: int = time.time_ns() // (10 ** 6)
                 msg: mqtt.MQTTMessageInfo = client.publish(
-                    "test", f"{seq_num} {cur_time}", qos
+                    "test", f"{seq_num} {cur_time}", userdata["qos"]
                 )
                 time.sleep(1)
                 # msg.wait_for_publish()
@@ -122,7 +138,9 @@ if __name__ == "__main__":
                     print("Retrying...")
 
                     cur_time = time.time_ns() // (10 ** 6)
-                    msg = client.publish("test", f"{seq_num} {cur_time}", qos)
+                    msg = client.publish(
+                        "test", f"{seq_num} {cur_time}", userdata["qos"]
+                    )
                     time.sleep(1)
                     # msg.wait_for_publish()
 
@@ -133,13 +151,13 @@ if __name__ == "__main__":
                         "published_time": -1,
                         "time_diff": -1,
                         "seq_num": seq_num,
-                        "qos": qos,
+                        "qos": userdata["qos"],
                     }
                 else:
                     # on_publish() already called
                     data[msg.mid]["publishing_time"] = cur_time
                     data[msg.mid]["seq_num"] = seq_num
-                    data[msg.mid]["qos"] = qos
+                    data[msg.mid]["qos"] = userdata["qos"]
                     data[msg.mid]["time_diff"] = (
                         data[msg.mid]["published_time"] - cur_time
                     )
@@ -156,8 +174,8 @@ if __name__ == "__main__":
     with open(stats_fname, "a") as stats_f:
         stats_f.write("Publisher\n")
         stats_f.write("----------\n")
-        stats_f.write(f"Network conditions: {net_cond}\n")
-        stats_f.write(f"QoS level: {qos}\n")
-        stats_f.write(f"Number of packets sent: {N}\n")
+        stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
+        stats_f.write(f"QoS level: {userdata['qos']}\n")
+        stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
         stats_f.write(f"Average publishing delay: {total_diff/len(data)}ms\n")
         stats_f.write("\n\n")

@@ -11,6 +11,7 @@ import random
 import threading
 import os
 from typing import Any, List, Dict
+import yaml
 
 N = 50
 stats_fname = "qos-stats.txt"
@@ -52,7 +53,7 @@ def on_connect(
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    client.subscribe("test", qos=qos)
+    client.subscribe("test", qos=userdata["qos"])
 
     # Create and start disconnect thread only if:
     #   We want disconnections to happen (ie. disconnect_perc > 0)
@@ -68,7 +69,7 @@ def on_connect(
 def on_message(client: mqtt.Client, userdata: Dict[str, Any], msg: mqtt.MQTTMessage):
     """Callback for when a PUBLISH message is received from the server"""
     rcv_time: int = time.time_ns() // (10 ** 6)
-    print(f"{msg.topic} {msg.payload} {msg.mid} {time.time_ns()}")
+    print(f"{msg.topic} {msg.payload} {msg.mid}")
     if msg.topic == "test":
         content: str = msg.payload.decode()
         seq_num, send_time = content.split(" ")
@@ -93,51 +94,66 @@ if __name__ == "__main__":
         prog="sub-client",
         usage="Usage: python sub-client.py <qos> <net_cond> <disconnect_perc> <disconnect_duration> <disconnect_interval>\nDefault: qos=0, net_cond=good, disconnect_perc=0, disconnect_duration=10, disconnect_interval=10",
     )
-    parser.add_argument("--qos", action="store", type=int, default=0, required=False)
-    # might want to change network_cond to something more useful (eg. x% unstable network, x% packet loss, x% limited bandwidth)
+    # parser.add_argument("--qos", action="store", type=int, default=0, required=False)
+    # # might want to change network_cond to something more useful (eg. x% unstable network, x% packet loss, x% limited bandwidth)
+    # parser.add_argument(
+    #     "--net_cond", action="store", type=str, default="good", required=False
+    # )
+    # parser.add_argument(
+    #     "--disconnect_perc", action="store", type=float, default=0, required=False
+    # )
+    # parser.add_argument(
+    #     "--disconnect_duration",
+    #     action="store",
+    #     type=int,
+    #     default=10,
+    #     required=False,
+    #     help="Duration before client initiates reconnect after disconnecting in seconds",
+    # )
+    # parser.add_argument(
+    #     "--disconnect_interval",
+    #     action="store",
+    #     type=int,
+    #     default=10,
+    #     required=False,
+    #     help="Minimum interval before next disconnect will be called after initiating reconnect in seconds",
+    # )
     parser.add_argument(
-        "--net_cond", action="store", type=str, default="good", required=False
-    )
-    parser.add_argument(
-        "--disconnect_perc", action="store", type=float, default=0, required=False
-    )
-    parser.add_argument(
-        "--disconnect_duration",
-        action="store",
-        type=int,
-        default=10,
+        "-f",
+        "--file",
+        help="Path to file with input variables",
         required=False,
-        help="Duration before client initiates reconnect after disconnecting in seconds",
-    )
-    parser.add_argument(
-        "--disconnect_interval",
-        action="store",
-        type=int,
-        default=10,
-        required=False,
-        help="Minimum interval before next disconnect will be called after initiating reconnect in seconds",
+        default="",
     )
     args = parser.parse_args()
 
-    qos: int = args.qos
-    net_cond: str = args.net_cond
-    # arguments for periodic disconnect
-    disconnect_perc: float = args.disconnect_perc
-    disconnect_duration: int = args.disconnect_duration
-    disconnect_interval: int = args.disconnect_interval
+    # Initialise userdata to be passed to client callbacks
+    userdata: Dict[str, Any] = {}
+    data: List[Dict[str, Any]] = []
+    userdata["qos"] = 0
+    userdata["net_cond"] = "good"
+    userdata["data"] = data
+    # variables for periodic disconnect
+    userdata["disconnect_perc"] = 0
+    userdata["disconnect_interval"] = 10
+    userdata["disconnect_duration"] = 10
+    userdata["disconnect_event"] = None  # Optional[threading.Event]
+    userdata["disconnect_thread"] = None  # Optional[threading.Thread]
+
+    if args.file:
+        if not os.path.exists(args.file):
+            print(f"{args.file} is not a valid path. Using default values.")
+        else:
+            with open(args.file, "r") as input_f:
+                input_values = yaml.safe_load(input_f)
+                if input_values.get("subscriber", None) is not None:
+                    userdata = {**userdata, **input_values["subscriber"]}
+                if input_values.get("shared", None) is not None:
+                    userdata = {**userdata, **input_values["shared"]}
+
+    print(f"userdata: {userdata}")
 
     try:
-        # Initialise userdata to be passed to client callbacks
-        userdata: Dict[str, Any] = {}
-        data: List[Dict[str, Any]] = []
-        userdata["data"] = data
-        # variables for periodic disconnect
-        userdata["disconnect_perc"] = disconnect_perc
-        userdata["disconnect_interval"] = disconnect_interval
-        userdata["disconnect_duration"] = disconnect_duration
-        userdata["disconnect_event"] = None  # Optional[threading.Event]
-        userdata["disconnect_thread"] = None  # Optional[threading.Thread]
-
         # Initialise client and callbacks
         client = mqtt.Client(
             client_id="test-sub",
@@ -170,7 +186,7 @@ if __name__ == "__main__":
         while True:
             client.loop_forever()
             # client disconnects and loop stops --> initiate reconnect after disconnect_duration
-            time.sleep(disconnect_duration)
+            time.sleep(userdata["disconnect_duration"])
             connected = False
             while not connected:
                 try:
@@ -188,8 +204,8 @@ if __name__ == "__main__":
             data_folder
             + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             + "_qos-"
-            + str(qos)
-            + f"_netcond-{net_cond}"
+            + str(userdata["qos"])
+            + f"_netcond-{userdata['net_cond']}"
             + ".json"
         )
         if not os.path.isdir(data_folder):
@@ -216,8 +232,8 @@ if __name__ == "__main__":
             with open(stats_fname, "a") as stats_f:
                 stats_f.write("Subscriber\n")
                 stats_f.write("----------\n")
-                stats_f.write(f"Network conditions: {net_cond}\n")
-                stats_f.write(f"QoS level: {qos}\n")
+                stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
+                stats_f.write(f"QoS level: {userdata['qos']}\n")
                 stats_f.write(f"Data file: {data_fname}\n")
                 stats_f.write(f"Number of packets sent: {N}\n")
                 stats_f.write(f"Number of packets received: {total_pkts}\n")

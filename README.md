@@ -17,23 +17,36 @@ If Mosquitto broker was stopped and re-started, update the `hostname` variable w
 The publisher will send `N` messages to the specified topic immediately after connecting. Hence, to test communications between publisher and subscriber, run the subscriber first.
 
 ```
-python sub-client.py <qos> <net_cond> <disconnect_perc> <disconnect_duration> <disconnect_interval>
+python sub-client.py -f <input-file-path>
 ```
-
-Default options: `--qos=0`, `--net_cond=good`, `--disconnect_perc=0`, `--disconnect_duration=10`, `--disconnect_interval=10`
 
 Once the subscriber is connected to the broker, run the publisher with:
 
 ```
-python pub-client.py <qos> <net_cond>
+python pub-client.py -f <input-file-path>
 ```
 
-Default options: `--qos=0 --net_cond=good`
+**Input File Format**
+
+Input arguments can be specified using a YAML file. The available parameters and default values are:
+
+```yaml
+shared:
+  qos: 0
+  net_cond: good
+  total_packets: 50
+publisher:
+subscriber:
+  disconnect_perc: 0
+  disconnect_duration: 10
+  disconnect_interval: 10
+```
 
 Valid options:
 
 - `qos=0,1,2`
 - `net_cond=good,poor` (`net_cond` is just a metadata recorded in the output file -- does not affect communications)
+- `total_packets` is the total number of messages to be sent from publisher to subscriber
 - `0 <= disconnect_perc <= 1` represents the chance for subscriber to get disconnected
 - `disconnect_duration` represents the duration before client initiates reconnect after disconnecting in seconds
 - `disconnect_interval` represents the minimum interval before next disconnect will be called after initiating reconnect in seconds
@@ -49,13 +62,13 @@ Note: Connecting to the broker might take a while. The socket will sometimes tim
 To run the publisher:
 
 ```
-./run.sh pub <args>
+./run.sh pub -f <input-file-path>
 ```
 
 To run the subscriber:
 
 ```
-./run.sh sub <args>
+./run.sh sub -f <input-file-path>
 ```
 
 Note that only 1 publisher and 1 subscriber can be run at the same time. If you wish to run multiple subscribers/publishers at the same time, edit `run.sh` to change the way the containers are named.
