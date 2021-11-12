@@ -14,8 +14,4 @@ COPY run-client.sh run-client.sh
 
 RUN chmod +x run-client.sh
 
-EXPOSE 5001
-
-EXPOSE 5002
-
 ENTRYPOINT ["./run-client.sh"]

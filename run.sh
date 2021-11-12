@@ -21,8 +21,4 @@ case "$(uname -s)" in
 esac
 echo "Current working directory: $curDir"
 echo "Executing docker run with following arguments: $@"
-port="5001"
-if [[ $1 == "pub" ]]; then
-    port="5002"
-fi
-docker run --rm --name mqtt-client-$1 -p $port:$port -v $curDir:/src $imageName $@
+docker run --rm --name mqtt-client-$1 -it -v $curDir:/src $imageName $@
