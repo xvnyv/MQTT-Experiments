@@ -75,7 +75,7 @@ if __name__ == "__main__":
 
     # initialise data
     data: Dict[int, Dict[str, Any]] = {}
-    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50}
+    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50, "qos": 0, "net_cond": "good",}
     sent: List[bool] = [False] * userdata["total_packets"]
 
     if args.file:
