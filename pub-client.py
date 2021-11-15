@@ -8,12 +8,14 @@ import socket
 from typing import Dict, Any, List
 import os
 import yaml
+from RepeatedTimer import RepeatedTimer
 
 stats_fname = "qos-stats.txt"
-hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
+# hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
+hostname = "localhost"
 port = 1883
 keepalive = 60
-
+send_interval = 1.0
 
 def on_connect(
     client: mqtt.Client,
@@ -33,6 +35,7 @@ def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
     """QoS 0: called when message has left the publisher
     QoS 1 & 2: called when handshakes have completed"""
     p_time = time.time_ns() // (10 ** 6)
+
     if userdata["data"].get(mid, None) is None:
         # publishing interval not over yet
         userdata["data"][mid] = {
@@ -49,9 +52,49 @@ def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
             p_time - userdata["data"][mid]["publishing_time"]
         )
 
+    userdata["curr_seq_num"] +=1
 
 def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
     print(f"[{level}] {buf}")
+
+
+def send_packets(userdata):
+    
+    cur_time: int = time.time_ns() // (10 ** 6)
+    seq_num = userdata["curr_seq_num"]
+
+    msg: mqtt.MQTTMessageInfo = client.publish(
+        "test", f"{seq_num} {cur_time}", userdata["qos"]
+    )
+    
+    while msg.rc != mqtt.MQTT_ERR_SUCCESS:
+        print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
+        print("Retrying...")
+
+        cur_time = time.time_ns() // (10 ** 6)
+        msg = client.publish(
+            "test", f"{seq_num} {cur_time}", userdata["qos"]
+        )
+
+    if data.get(msg.mid, None) is None:
+        # on_publish() not called yet
+        data[msg.mid] = {
+            "publishing_time": cur_time,
+            "published_time": -1,
+            "time_diff": -1,
+            "seq_num": seq_num,
+            "qos": userdata["qos"],
+        }
+    else:
+        # on_publish() already called
+        data[msg.mid]["publishing_time"] = cur_time
+        data[msg.mid]["seq_num"] = seq_num
+        data[msg.mid]["qos"] = userdata["qos"]
+        data[msg.mid]["time_diff"] = (
+            data[msg.mid]["published_time"] - cur_time
+        )
+
+    print(f"Message {msg.mid} with seq num {seq_num} is published")
 
 
 if __name__ == "__main__":
@@ -75,7 +118,7 @@ if __name__ == "__main__":
 
     # initialise data
     data: Dict[int, Dict[str, Any]] = {}
-    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50, "qos": 0, "net_cond": "good",}
+    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50, "qos": 0, "net_cond": "good", "curr_seq_num": 1}
     sent: List[bool] = [False] * userdata["total_packets"]
 
     if args.file:
@@ -121,51 +164,12 @@ if __name__ == "__main__":
     while not userdata["connected"]:
         pass
 
-    # publish N messages
-    for seq_num in range(1, userdata["total_packets"] + 1):
-        while not sent[seq_num - 1]:
-            try:
-                # switch to using threading.Timer to send at an interval
-                cur_time: int = time.time_ns() // (10 ** 6)
-                msg: mqtt.MQTTMessageInfo = client.publish(
-                    "test", f"{seq_num} {cur_time}", userdata["qos"]
-                )
-                time.sleep(1)
-                # msg.wait_for_publish()
+    rt = RepeatedTimer(send_interval, send_packets, userdata)
 
-                while msg.rc != mqtt.MQTT_ERR_SUCCESS:
-                    print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
-                    print("Retrying...")
-
-                    cur_time = time.time_ns() // (10 ** 6)
-                    msg = client.publish(
-                        "test", f"{seq_num} {cur_time}", userdata["qos"]
-                    )
-                    time.sleep(1)
-                    # msg.wait_for_publish()
-
-                if data.get(msg.mid, None) is None:
-                    # on_publish() not called yet
-                    data[msg.mid] = {
-                        "publishing_time": cur_time,
-                        "published_time": -1,
-                        "time_diff": -1,
-                        "seq_num": seq_num,
-                        "qos": userdata["qos"],
-                    }
-                else:
-                    # on_publish() already called
-                    data[msg.mid]["publishing_time"] = cur_time
-                    data[msg.mid]["seq_num"] = seq_num
-                    data[msg.mid]["qos"] = userdata["qos"]
-                    data[msg.mid]["time_diff"] = (
-                        data[msg.mid]["published_time"] - cur_time
-                    )
-
-                print(f"Message {msg.mid} with seq num {seq_num} is published")
-                sent[seq_num - 1] = True
-            except ValueError:
-                time.sleep(1)
+    while True:
+        if userdata["curr_seq_num"] > userdata["total_packets"]:
+            rt.stop()
+            break
 
     total_diff: int = 0
     for mid, pkt in data.items():
