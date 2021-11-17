@@ -15,9 +15,8 @@ import yaml
 
 N = 50
 stats_fname = "qos-stats.txt"
-# hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
-hostname = "localhost"
-port = 1883
+hostname = "m.shohamc1.com"
+port = 80
 keepalive = 60
 
 
@@ -95,30 +94,7 @@ if __name__ == "__main__":
         prog="sub-client",
         usage="Usage: python sub-client.py <qos> <net_cond> <disconnect_perc> <disconnect_duration> <disconnect_interval>\nDefault: qos=0, net_cond=good, disconnect_perc=0, disconnect_duration=10, disconnect_interval=10",
     )
-    # parser.add_argument("--qos", action="store", type=int, default=0, required=False)
-    # # might want to change network_cond to something more useful (eg. x% unstable network, x% packet loss, x% limited bandwidth)
-    # parser.add_argument(
-    #     "--net_cond", action="store", type=str, default="good", required=False
-    # )
-    # parser.add_argument(
-    #     "--disconnect_perc", action="store", type=float, default=0, required=False
-    # )
-    # parser.add_argument(
-    #     "--disconnect_duration",
-    #     action="store",
-    #     type=int,
-    #     default=10,
-    #     required=False,
-    #     help="Duration before client initiates reconnect after disconnecting in seconds",
-    # )
-    # parser.add_argument(
-    #     "--disconnect_interval",
-    #     action="store",
-    #     type=int,
-    #     default=10,
-    #     required=False,
-    #     help="Minimum interval before next disconnect will be called after initiating reconnect in seconds",
-    # )
+
     parser.add_argument(
         "-f",
         "--file",
@@ -160,8 +136,10 @@ if __name__ == "__main__":
             client_id="test-sub",
             userdata=userdata,
             protocol=mqtt.MQTTv5,
-            transport="tcp",
+            transport="websockets",
         )
+        client.username_pw_set("test", "test")
+
         client.on_connect = on_connect
         client.on_message = on_message
         client.on_log = on_log

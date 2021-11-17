@@ -11,9 +11,8 @@ import yaml
 from RepeatedTimer import RepeatedTimer
 
 stats_fname = "qos-stats.txt"
-# hostname = "ec2-3-145-35-37.us-east-2.compute.amazonaws.com"
-hostname = "localhost"
-port = 1883
+hostname = "m.shohamc1.com"
+port = 80
 keepalive = 60
 send_interval = 1.0
 
@@ -103,10 +102,7 @@ if __name__ == "__main__":
         prog="sub-client",
         usage="Usage: python sub-client.py <qos> <network-cond>\nDefault: qos=0, network_cond=good",
     )
-    # parser.add_argument("--qos", action="store", type=int, default=0, required=False)
-    # parser.add_argument(
-    #     "--net_cond", action="store", type=str, default="good", required=False
-    # )
+
     parser.add_argument(
         "-f",
         "--file",
@@ -118,7 +114,13 @@ if __name__ == "__main__":
 
     # initialise data
     data: Dict[int, Dict[str, Any]] = {}
-    userdata: Dict[str, Any] = {"connected": False, "data": data, "total_packets": 50, "qos": 0, "net_cond": "good", "curr_seq_num": 1}
+    userdata: Dict[str, Any] = {
+        "connected": False,
+        "data": data,
+        "total_packets": 50,
+        "qos": 0,
+        "net_cond": "good",
+    }
     sent: List[bool] = [False] * userdata["total_packets"]
 
     if args.file:
@@ -138,8 +140,10 @@ if __name__ == "__main__":
         client_id="test-pub",
         userdata=userdata,
         protocol=mqtt.MQTTv5,
-        transport="tcp",
+        transport="websockets",
     )
+    client.username_pw_set("test", "test")
+
     client.on_connect = on_connect
     client.on_publish = on_publish
     client.on_log = on_log
