@@ -33,7 +33,7 @@ Input arguments can be specified using a YAML file. The available parameters and
 ```yaml
 shared:
   qos: 0
-  net_cond: good
+  net_cond: normal
   total_packets: 50
 publisher:
 subscriber:
@@ -45,7 +45,7 @@ subscriber:
 Valid options:
 
 - `qos=0,1,2`
-- `net_cond=good,poor` (`net_cond` is just a metadata recorded in the output file -- does not affect communications)
+- `net_cond` acts as a label in qos-stats.txt so that you can identify which test scenario that data was for
 - `total_packets` is the total number of messages to be sent from publisher to subscriber
 - `0 <= disconnect_perc <= 1` represents the chance for subscriber to get disconnected
 - `disconnect_duration` represents the duration before client initiates reconnect after disconnecting in seconds

@@ -1,3 +1,4 @@
+import statistics
 import paho.mqtt.client as mqtt
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     # Process arguments
     parser = argparse.ArgumentParser(
         prog="sub-client",
-        usage="Usage: python sub-client.py <qos> <net_cond> <disconnect_perc> <disconnect_duration> <disconnect_interval>\nDefault: qos=0, net_cond=good, disconnect_perc=0, disconnect_duration=10, disconnect_interval=10",
+        usage="Usage: python sub-client.py -f <input-file-path>",
     )
 
     parser.add_argument(
@@ -108,7 +109,8 @@ if __name__ == "__main__":
     userdata: Dict[str, Any] = {}
     data: List[Dict[str, Any]] = []
     userdata["qos"] = 0
-    userdata["net_cond"] = "good"
+    userdata["net_cond"] = "normal"
+    userdata["total_packets"] = 50
     userdata["data"] = data
     # variables for periodic disconnect
     userdata["disconnect_perc"] = 0
@@ -158,9 +160,10 @@ if __name__ == "__main__":
                     properties=properties,
                 )
                 connected = True
-            except socket.timeout:
-                pass
+            except (socket.timeout, mqtt.WebsocketConnectionError):
+                print("connection error, retrying...")
 
+        start_time = datetime.datetime.now()
         # Loop forever with periodic disconnects and reconnects
         while True:
             client.loop_forever()
@@ -202,22 +205,33 @@ if __name__ == "__main__":
         if data:
             print("Calculating statistics...")
             total_diff = 0
-            total_pkts = 0
+            data_points: List[int] = []
             for pkt in data:
                 if pkt["seq_num"] != -1:
                     total_diff += pkt["time_diff"]
-                    total_pkts += 1
+                    data_points.append(pkt["time_diff"])
+
+            std_deviation = statistics.stdev(data_points)
+            max_point = max(data_points)
+            min_point = min(data_points)
+            median = statistics.median(data_points)
 
             with open(stats_fname, "a") as stats_f:
                 stats_f.write("Subscriber\n")
                 stats_f.write("----------\n")
+                stats_f.write(f"Start time: {start_time}\n")
                 stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
                 stats_f.write(f"QoS level: {userdata['qos']}\n")
                 stats_f.write(f"Data file: {data_fname}\n")
-                stats_f.write(f"Number of packets sent: {N}\n")
-                stats_f.write(f"Number of packets received: {total_pkts}\n")
-                stats_f.write(f"Packet loss: {(N-total_pkts)/N*100}%\n")
-                stats_f.write(f"Average end-to-end delay: {total_diff/len(data)}ms\n")
+                stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
+                stats_f.write(f"Number of packets received: {len(data_points)}\n")
+                stats_f.write(f"Packet loss: {(N-len(data_points))/N*100}%\n")
+                stats_f.write(f"---End-to-End Delay\n")
+                stats_f.write(f"Min: {min_point}ms\n")
+                stats_f.write(f"Mean: {total_diff/len(data)}ms\n")
+                stats_f.write(f"Median: {median}ms\n")
+                stats_f.write(f"Max: {max_point}ms\n")
+                stats_f.write(f"Standard Deviation: {std_deviation}\n")
                 stats_f.write("\n\n")
 
         print("Subscriber closed successfully")

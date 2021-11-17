@@ -1,3 +1,4 @@
+import datetime
 import paho.mqtt.client as mqtt
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -8,6 +9,7 @@ import socket
 from typing import Dict, Any, List
 import os
 import yaml
+import statistics
 from RepeatedTimer import RepeatedTimer
 
 stats_fname = "qos-stats.txt"
@@ -15,6 +17,7 @@ hostname = "m.shohamc1.com"
 port = 80
 keepalive = 60
 send_interval = 1.0
+
 
 def on_connect(
     client: mqtt.Client,
@@ -51,29 +54,28 @@ def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
             p_time - userdata["data"][mid]["publishing_time"]
         )
 
-    userdata["curr_seq_num"] +=1
+    userdata["curr_seq_num"] += 1
+
 
 def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
     print(f"[{level}] {buf}")
 
 
 def send_packets(userdata):
-    
+
     cur_time: int = time.time_ns() // (10 ** 6)
     seq_num = userdata["curr_seq_num"]
 
     msg: mqtt.MQTTMessageInfo = client.publish(
         "test", f"{seq_num} {cur_time}", userdata["qos"]
     )
-    
+
     while msg.rc != mqtt.MQTT_ERR_SUCCESS:
         print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
         print("Retrying...")
 
         cur_time = time.time_ns() // (10 ** 6)
-        msg = client.publish(
-            "test", f"{seq_num} {cur_time}", userdata["qos"]
-        )
+        msg = client.publish("test", f"{seq_num} {cur_time}", userdata["qos"])
 
     if data.get(msg.mid, None) is None:
         # on_publish() not called yet
@@ -89,9 +91,7 @@ def send_packets(userdata):
         data[msg.mid]["publishing_time"] = cur_time
         data[msg.mid]["seq_num"] = seq_num
         data[msg.mid]["qos"] = userdata["qos"]
-        data[msg.mid]["time_diff"] = (
-            data[msg.mid]["published_time"] - cur_time
-        )
+        data[msg.mid]["time_diff"] = data[msg.mid]["published_time"] - cur_time
 
     print(f"Message {msg.mid} with seq num {seq_num} is published")
 
@@ -99,8 +99,8 @@ def send_packets(userdata):
 if __name__ == "__main__":
     # get args
     parser = argparse.ArgumentParser(
-        prog="sub-client",
-        usage="Usage: python sub-client.py <qos> <network-cond>\nDefault: qos=0, network_cond=good",
+        prog="pub-client",
+        usage="Usage: python pub-client.py -f <input-file-path>",
     )
 
     parser.add_argument(
@@ -119,7 +119,8 @@ if __name__ == "__main__":
         "data": data,
         "total_packets": 50,
         "qos": 0,
-        "net_cond": "good",
+        "net_cond": "normal",
+        "curr_seq_num": 1,
     }
     sent: List[bool] = [False] * userdata["total_packets"]
 
@@ -158,9 +159,10 @@ if __name__ == "__main__":
                 hostname, port, keepalive, clean_start=False, properties=properties
             )
             connected = True
-        except socket.timeout:
-            print("connection socket timeout, retrying...")
+        except (socket.timeout, mqtt.WebsocketConnectionError):
+            print("connection error, retrying...")
 
+    start_time = datetime.datetime.now()
     # start looping to read from and write to broker
     client.loop_start()
 
@@ -176,14 +178,27 @@ if __name__ == "__main__":
             break
 
     total_diff: int = 0
+    data_points: List[int] = []
     for mid, pkt in data.items():
         total_diff += pkt["time_diff"]
+        data_points.append(pkt["time_diff"])
+
+    std_deviation = statistics.stdev(data_points)
+    max_point = max(data_points)
+    min_point = min(data_points)
+    median = statistics.median(data_points)
 
     with open(stats_fname, "a") as stats_f:
         stats_f.write("Publisher\n")
         stats_f.write("----------\n")
+        stats_f.write(f"Start time: {start_time}\n")
         stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
         stats_f.write(f"QoS level: {userdata['qos']}\n")
         stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
-        stats_f.write(f"Average publishing delay: {total_diff/len(data)}ms\n")
+        stats_f.write(f"---Publishing Delay\n")
+        stats_f.write(f"Min: {min_point}ms\n")
+        stats_f.write(f"Mean: {total_diff/len(data)}ms\n")
+        stats_f.write(f"Median: {median}ms\n")
+        stats_f.write(f"Max: {max_point}ms\n")
+        stats_f.write(f"Standard Deviation: {std_deviation}\n")
         stats_f.write("\n\n")
