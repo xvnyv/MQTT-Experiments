@@ -119,6 +119,7 @@ if __name__ == "__main__":
         "data": data,
         "total_packets": 50,
         "qos": 0,
+        "tls": False,
         "net_cond": "normal",
         "curr_seq_num": 1,
     }
@@ -144,6 +145,9 @@ if __name__ == "__main__":
         transport="websockets",
     )
     client.username_pw_set("test", "test")
+    if userdata["tls"]:
+        client.tls_set()
+        port = 443
 
     client.on_connect = on_connect
     client.on_publish = on_publish
@@ -161,6 +165,7 @@ if __name__ == "__main__":
             connected = True
         except (socket.timeout, mqtt.WebsocketConnectionError):
             print("connection error, retrying...")
+            time.sleep(1)
 
     start_time = datetime.datetime.now()
     # start looping to read from and write to broker
@@ -188,11 +193,15 @@ if __name__ == "__main__":
     min_point = min(data_points)
     median = statistics.median(data_points)
 
-    with open(stats_fname, "a") as stats_f:
+    stats_folder = "summary/"
+    stats_fname = stats_folder + userdata["net_cond"] + ".txt"
+
+    with open(stats_fname, "w") as stats_f:
         stats_f.write("Publisher\n")
         stats_f.write("----------\n")
         stats_f.write(f"Start time: {start_time}\n")
         stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
+        stats_f.write(f"Used TLS: {userdata['tls']}\n")
         stats_f.write(f"QoS level: {userdata['qos']}\n")
         stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
         stats_f.write(f"---Publishing Delay\n")

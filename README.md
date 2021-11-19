@@ -35,6 +35,7 @@ shared:
   qos: 0
   net_cond: normal
   total_packets: 50
+  tls: False
 publisher:
 subscriber:
   disconnect_perc: 0
@@ -47,6 +48,7 @@ Valid options:
 - `qos=0,1,2`
 - `net_cond` acts as a label in qos-stats.txt so that you can identify which test scenario that data was for
 - `total_packets` is the total number of messages to be sent from publisher to subscriber
+- `tls` is used to indicate whether or not both publisher and subscriber should use TLS
 - `0 <= disconnect_perc <= 1` represents the chance for subscriber to get disconnected
 - `disconnect_duration` represents the duration before client initiates reconnect after disconnecting in seconds
 - `disconnect_interval` represents the minimum interval before next disconnect will be called after initiating reconnect in seconds

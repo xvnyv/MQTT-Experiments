@@ -14,7 +14,6 @@ import os
 from typing import Any, List, Dict
 import yaml
 
-N = 50
 stats_fname = "qos-stats.txt"
 hostname = "m.shohamc1.com"
 port = 80
@@ -110,6 +109,7 @@ if __name__ == "__main__":
     data: List[Dict[str, Any]] = []
     userdata["qos"] = 0
     userdata["net_cond"] = "normal"
+    userdata["tls"] = False
     userdata["total_packets"] = 50
     userdata["data"] = data
     # variables for periodic disconnect
@@ -141,6 +141,9 @@ if __name__ == "__main__":
             transport="websockets",
         )
         client.username_pw_set("test", "test")
+        if userdata["tls"]:
+            client.tls_set()
+            port = 443
 
         client.on_connect = on_connect
         client.on_message = on_message
@@ -178,31 +181,26 @@ if __name__ == "__main__":
                 except socket.timeout:
                     pass
     except KeyboardInterrupt:
-        # Write collected data to file
-        #   Can delete if we don't need to collect all the generated data
-        #   Just collecting for now in case we want to do further analysis later on
-        data_folder = "data/"
-        data_fname = (
-            data_folder
-            + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            + "_qos-"
-            + str(userdata["qos"])
-            + f"_netcond-{userdata['net_cond']}"
-            + ".json"
-        )
-        if not os.path.isdir(data_folder):
-            os.mkdir(data_folder)
-        with open(data_fname, "w") as data_f:
-            json.dump(data, data_f)
-
-        # Stop disconnect thread, blocks until disconnect thread has been stopped
-        if userdata["disconnect_thread"] is not None:
-            print("Cancelling timer...")
-            userdata["disconnect_event"].set()
-            userdata["disconnect_thread"].join()
-
-        # Process collected data
         if data:
+            # Write collected data to file
+            #   Can delete if we don't need to collect all the generated data
+            #   Just collecting for now in case we want to do further analysis later on
+            data_folder = "data/"
+            cur_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            data_fname = (
+                data_folder
+                + cur_date
+                + "_qos-"
+                + str(userdata["qos"])
+                + f"_netcond-{userdata['net_cond']}"
+                + ".json"
+            )
+            if not os.path.isdir(data_folder):
+                os.mkdir(data_folder)
+            with open(data_fname, "w") as data_f:
+                json.dump(data, data_f)
+
+            # Process collected data
             print("Calculating statistics...")
             total_diff = 0
             data_points: List[int] = []
@@ -216,16 +214,24 @@ if __name__ == "__main__":
             min_point = min(data_points)
             median = statistics.median(data_points)
 
+            stats_folder = "summary/"
+            stats_fname = stats_folder + userdata["net_cond"] + ".txt"
+
             with open(stats_fname, "a") as stats_f:
                 stats_f.write("Subscriber\n")
                 stats_f.write("----------\n")
                 stats_f.write(f"Start time: {start_time}\n")
-                stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
+                stats_f.write(
+                    f"Network conditions test label: {userdata['net_cond']}\n"
+                )
                 stats_f.write(f"QoS level: {userdata['qos']}\n")
+                stats_f.write(f"Used TLS: {userdata['tls']}\n")
                 stats_f.write(f"Data file: {data_fname}\n")
                 stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
                 stats_f.write(f"Number of packets received: {len(data_points)}\n")
-                stats_f.write(f"Packet loss: {(N-len(data_points))/N*100}%\n")
+                stats_f.write(
+                    f"Packet loss: {(userdata['total_packets']-len(data_points))/userdata['total_packets']*100}%\n"
+                )
                 stats_f.write(f"---End-to-End Delay\n")
                 stats_f.write(f"Min: {min_point}ms\n")
                 stats_f.write(f"Mean: {total_diff/len(data)}ms\n")
@@ -233,5 +239,16 @@ if __name__ == "__main__":
                 stats_f.write(f"Max: {max_point}ms\n")
                 stats_f.write(f"Standard Deviation: {std_deviation}\n")
                 stats_f.write("\n\n")
+
+            os.rename(
+                stats_fname,
+                stats_folder + cur_date + "_" + userdata["net_cond"] + ".txt",
+            )
+
+        # Stop disconnect thread, blocks until disconnect thread has been stopped
+        if userdata["disconnect_thread"] is not None:
+            print("Cancelling timer...")
+            userdata["disconnect_event"].set()
+            userdata["disconnect_thread"].join()
 
         print("Subscriber closed successfully")
