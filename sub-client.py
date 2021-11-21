@@ -217,6 +217,9 @@ if __name__ == "__main__":
             stats_folder = "summary/"
             stats_fname = stats_folder + userdata["net_cond"] + ".txt"
 
+            if not os.path.isdir(stats_folder):
+                os.mkdir(stats_folder)
+
             with open(stats_fname, "a") as stats_f:
                 stats_f.write("Subscriber\n")
                 stats_f.write("----------\n")
