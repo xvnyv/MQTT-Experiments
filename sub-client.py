@@ -17,6 +17,10 @@ import yaml
 stats_fname = "qos-stats.txt"
 hostname = "m.shohamc1.com"
 port = 80
+transport = "websockets"
+# hostname = "ec2-3-137-165-98.us-east-2.compute.amazonaws.com"
+# port = 1883
+# transport = "tcp"
 keepalive = 60
 
 
@@ -138,7 +142,7 @@ if __name__ == "__main__":
             client_id="test-sub",
             userdata=userdata,
             protocol=mqtt.MQTTv5,
-            transport="websockets",
+            transport=transport,
         )
         client.username_pw_set("test", "test")
         if userdata["tls"]:

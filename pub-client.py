@@ -10,11 +10,16 @@ from typing import Dict, Any, List
 import os
 import yaml
 import statistics
+import threading
 from RepeatedTimer import RepeatedTimer
 
 stats_fname = "qos-stats.txt"
 hostname = "m.shohamc1.com"
 port = 80
+transport = "websockets"
+# hostname = "ec2-3-137-165-98.us-east-2.compute.amazonaws.com"
+# port = 1883
+# transport = "tcp"
 keepalive = 60
 send_interval = 1.0
 
@@ -38,6 +43,7 @@ def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
     QoS 1 & 2: called when handshakes have completed"""
     p_time = time.time_ns() // (10 ** 6)
 
+    userdata["lock"].acquire()
     if userdata["data"].get(mid, None) is None:
         # publishing interval not over yet
         userdata["data"][mid] = {
@@ -53,8 +59,11 @@ def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
         userdata["data"][mid]["time_diff"] = (
             p_time - userdata["data"][mid]["publishing_time"]
         )
+    userdata["lock"].release()
 
-    userdata["curr_seq_num"] += 1
+    userdata["published_count"] += 1
+
+    # userdata["curr_seq_num"] += 1
 
 
 def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
@@ -62,38 +71,43 @@ def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
 
 
 def send_packets(userdata):
+    while userdata["curr_seq_num"] <= userdata["total_packets"]:
+        cur_time: int = time.time_ns() // (10 ** 6)
+        seq_num = userdata["curr_seq_num"]
 
-    cur_time: int = time.time_ns() // (10 ** 6)
-    seq_num = userdata["curr_seq_num"]
+        msg: mqtt.MQTTMessageInfo = client.publish(
+            "test", f"{seq_num} {cur_time}", userdata["qos"]
+        )
 
-    msg: mqtt.MQTTMessageInfo = client.publish(
-        "test", f"{seq_num} {cur_time}", userdata["qos"]
-    )
+        # print(msg.rc)
 
-    while msg.rc != mqtt.MQTT_ERR_SUCCESS:
-        print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
-        print("Retrying...")
+        while msg.rc != mqtt.MQTT_ERR_SUCCESS:
+            print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
+            print("Retrying...")
 
-        cur_time = time.time_ns() // (10 ** 6)
-        msg = client.publish("test", f"{seq_num} {cur_time}", userdata["qos"])
+            cur_time = time.time_ns() // (10 ** 6)
+            msg = client.publish("test", f"{seq_num} {cur_time}", userdata["qos"])
 
-    if data.get(msg.mid, None) is None:
-        # on_publish() not called yet
-        data[msg.mid] = {
-            "publishing_time": cur_time,
-            "published_time": -1,
-            "time_diff": -1,
-            "seq_num": seq_num,
-            "qos": userdata["qos"],
-        }
-    else:
-        # on_publish() already called
-        data[msg.mid]["publishing_time"] = cur_time
-        data[msg.mid]["seq_num"] = seq_num
-        data[msg.mid]["qos"] = userdata["qos"]
-        data[msg.mid]["time_diff"] = data[msg.mid]["published_time"] - cur_time
-
-    print(f"Message {msg.mid} with seq num {seq_num} is published")
+        userdata["lock"].acquire()
+        if data.get(msg.mid, None) is None:
+            # on_publish() not called yet
+            data[msg.mid] = {
+                "publishing_time": cur_time,
+                "published_time": -1,
+                "time_diff": -1,
+                "seq_num": seq_num,
+                "qos": userdata["qos"],
+            }
+        else:
+            # on_publish() already called
+            data[msg.mid]["publishing_time"] = cur_time
+            data[msg.mid]["seq_num"] = seq_num
+            data[msg.mid]["qos"] = userdata["qos"]
+            data[msg.mid]["time_diff"] = data[msg.mid]["published_time"] - cur_time
+        userdata["lock"].release()
+        print(f"Message {msg.mid} with seq num {seq_num} is published")
+        userdata["curr_seq_num"] += 1
+        time.sleep(1)
 
 
 if __name__ == "__main__":
@@ -122,6 +136,8 @@ if __name__ == "__main__":
         "tls": False,
         "net_cond": "normal",
         "curr_seq_num": 1,
+        "lock": threading.Lock(),
+        "published_count": 0,
     }
     sent: List[bool] = [False] * userdata["total_packets"]
 
@@ -142,7 +158,7 @@ if __name__ == "__main__":
         client_id="test-pub",
         userdata=userdata,
         protocol=mqtt.MQTTv5,
-        transport="websockets",
+        transport=transport,
     )
     client.username_pw_set("test", "test")
     if userdata["tls"]:
@@ -175,12 +191,16 @@ if __name__ == "__main__":
     while not userdata["connected"]:
         pass
 
-    rt = RepeatedTimer(send_interval, send_packets, userdata)
+    # rt = RepeatedTimer(send_interval, send_packets, userdata)
 
-    while True:
-        if userdata["curr_seq_num"] > userdata["total_packets"]:
-            rt.stop()
-            break
+    # while True:
+    #     if userdata["curr_seq_num"] > userdata["total_packets"]:
+    #         rt.stop()
+    #         break
+    send_packets(userdata)
+
+    while userdata["published_count"] < userdata["total_packets"]:
+        time.sleep(1)
 
     total_diff: int = 0
     data_points: List[int] = []
