@@ -1,26 +1,27 @@
 import datetime
+import json
 import paho.mqtt.client as mqtt
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCodes
 import argparse
 import time
-import socket
 from typing import Dict, Any, List
 import os
 import yaml
-import statistics
 import threading
-from RepeatedTimer import RepeatedTimer
 
-stats_fname = "qos-stats.txt"
-hostname = "m.shohamc1.com"
-port = 80
-transport = "websockets"
-# hostname = "ec2-3-137-165-98.us-east-2.compute.amazonaws.com"
-# port = 1883
-# transport = "tcp"
-keepalive = 60
+# from RepeatedTimer import RepeatedTimer
+from util import (
+    dump_data,
+    calc_stats,
+    get_time,
+    record_connect,
+    connect_to_broker,
+    transport,
+    parse_yaml,
+)
+
 send_interval = 1.0
 
 
@@ -31,6 +32,7 @@ def on_connect(
     reason: ReasonCodes,
     properties: Properties,
 ):
+    record_connect(userdata)
     print("Connected with reason code " + reason.getName())
 
     # Subscribing in on_connect() means that if we lose the connection and
@@ -41,7 +43,7 @@ def on_connect(
 def on_publish(client: mqtt.Client, userdata: Dict[str, Any], mid: int):
     """QoS 0: called when message has left the publisher
     QoS 1 & 2: called when handshakes have completed"""
-    p_time = time.time_ns() // (10 ** 6)
+    p_time = get_time()
 
     userdata["lock"].acquire()
     if userdata["data"].get(mid, None) is None:
@@ -72,7 +74,7 @@ def on_log(client: mqtt.Client, userdata: Dict[str, Any], level: int, buf: str):
 
 def send_packets(userdata):
     while userdata["curr_seq_num"] <= userdata["total_packets"]:
-        cur_time: int = time.time_ns() // (10 ** 6)
+        cur_time: float = get_time()
         seq_num = userdata["curr_seq_num"]
 
         msg: mqtt.MQTTMessageInfo = client.publish(
@@ -85,7 +87,7 @@ def send_packets(userdata):
             print(f"Error publishing message with seq_num {seq_num}: {msg.rc}")
             print("Retrying...")
 
-            cur_time = time.time_ns() // (10 ** 6)
+            cur_time = get_time()
             msg = client.publish("test", f"{seq_num} {cur_time}", userdata["qos"])
 
         userdata["lock"].acquire()
@@ -128,30 +130,25 @@ if __name__ == "__main__":
 
     # initialise data
     data: Dict[int, Dict[str, Any]] = {}
+    conn_data: List[Dict[str, Any]] = []
+
     userdata: Dict[str, Any] = {
         "connected": False,
         "data": data,
         "total_packets": 50,
         "qos": 0,
         "tls": False,
-        "net_cond": "normal",
+        "label": "normal",
         "curr_seq_num": 1,
         "lock": threading.Lock(),
         "published_count": 0,
+        "conn_time": -1,
+        "conn_tries": 0,
+        "conn_data": conn_data,
     }
     sent: List[bool] = [False] * userdata["total_packets"]
 
-    if args.file:
-        if not os.path.exists(args.file):
-            print(f"{args.file} is not a valid path. Using default values.")
-        else:
-            with open(args.file, "r") as input_f:
-                input_values = yaml.safe_load(input_f)
-                if input_values.get("publisher", None) is not None:
-                    userdata = {**userdata, **input_values["publisher"]}
-                if input_values.get("shared", None) is not None:
-                    userdata = {**userdata, **input_values["shared"]}
-
+    userdata = parse_yaml(args.file, userdata, "publisher")
     print(f"userdata: {userdata}")
 
     client = mqtt.Client(
@@ -163,27 +160,17 @@ if __name__ == "__main__":
     client.username_pw_set("test", "test")
     if userdata["tls"]:
         client.tls_set()
-        port = 443
 
     client.on_connect = on_connect
     client.on_publish = on_publish
     client.on_log = on_log
 
     # connect to host
-    connected = False
     properties = Properties(PacketTypes.CONNECT)
     properties.SessionExpiryInterval = 30
-    while not connected:
-        try:
-            client.connect(
-                hostname, port, keepalive, clean_start=False, properties=properties
-            )
-            connected = True
-        except (socket.timeout, mqtt.WebsocketConnectionError):
-            print("connection error, retrying...")
-            time.sleep(1)
+    connect_to_broker(client, userdata, properties)
 
-    start_time = datetime.datetime.now()
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     # start looping to read from and write to broker
     client.loop_start()
 
@@ -191,46 +178,40 @@ if __name__ == "__main__":
     while not userdata["connected"]:
         pass
 
-    # rt = RepeatedTimer(send_interval, send_packets, userdata)
-
-    # while True:
-    #     if userdata["curr_seq_num"] > userdata["total_packets"]:
-    #         rt.stop()
-    #         break
     send_packets(userdata)
 
     while userdata["published_count"] < userdata["total_packets"]:
         time.sleep(1)
 
-    total_diff: int = 0
-    data_points: List[int] = []
-    for mid, pkt in data.items():
-        total_diff += pkt["time_diff"]
-        data_points.append(pkt["time_diff"])
+    cur_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if conn_data:
+        conn_data_fname = dump_data("pub-conn", conn_data, cur_date, userdata)
+        conn_delay_stats = calc_stats(conn_data)
+        conn_tries_stats = calc_stats(conn_data, "tries")
+    if data:
+        list_data = list(data.values())
+        data_fname = dump_data("pub", list_data, cur_date, userdata)
+        pub_delay_stats = calc_stats(list_data)
 
-    std_deviation = statistics.stdev(data_points)
-    max_point = max(data_points)
-    min_point = min(data_points)
-    median = statistics.median(data_points)
+        stats_folder = "summary/"
+        stats_fname = stats_folder + userdata["label"] + ".json"
 
-    stats_folder = "summary/"
-    stats_fname = stats_folder + userdata["net_cond"] + ".txt"
+        if not os.path.isdir(stats_folder):
+            os.mkdir(stats_folder)
 
-    if not os.path.isdir(stats_folder):
-        os.mkdir(stats_folder)
+        with open(stats_fname, "w") as stats_f:
+            summary_data = {
+                "start_time": start_time,
+                "label": userdata["label"],
+                "pub_data_file": data_fname,
+                "tls": userdata["tls"],
+                "qos": userdata["qos"],
+                "pkt_sent": userdata["total_packets"],
+                "pub_delay": pub_delay_stats,
+            }
+            if conn_data:
+                summary_data["conn_delay"] = conn_delay_stats
+                summary_data["conn_tries"] = conn_tries_stats
+                summary_data["conn_data_file"] = conn_data_fname
 
-    with open(stats_fname, "w") as stats_f:
-        stats_f.write("Publisher\n")
-        stats_f.write("----------\n")
-        stats_f.write(f"Start time: {start_time}\n")
-        stats_f.write(f"Network conditions: {userdata['net_cond']}\n")
-        stats_f.write(f"Used TLS: {userdata['tls']}\n")
-        stats_f.write(f"QoS level: {userdata['qos']}\n")
-        stats_f.write(f"Number of packets sent: {userdata['total_packets']}\n")
-        stats_f.write(f"---Publishing Delay\n")
-        stats_f.write(f"Min: {min_point}ms\n")
-        stats_f.write(f"Mean: {total_diff/len(data)}ms\n")
-        stats_f.write(f"Median: {median}ms\n")
-        stats_f.write(f"Max: {max_point}ms\n")
-        stats_f.write(f"Standard Deviation: {std_deviation}\n")
-        stats_f.write("\n\n")
+            json.dump({"publisher": summary_data}, stats_f)
