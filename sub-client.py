@@ -181,8 +181,15 @@ if __name__ == "__main__":
             e2e_stats = calc_stats(e2e_data)
 
             stats_folder = "summary/"
-            stats_fname = stats_folder + userdata["label"] + ".json"
-
+            stats_fname = (
+                stats_folder 
+                + "_qos" 
+                + str(userdata["qos"])
+                + "_" + userdata['label']
+                + ("_tls" if userdata["tls"] else "") 
+                + ".json"
+                )
+                
             if not os.path.isdir(stats_folder):
                 os.mkdir(stats_folder)
 
@@ -210,7 +217,14 @@ if __name__ == "__main__":
 
             os.rename(
                 stats_fname,
-                stats_folder + cur_date + "_" + userdata["label"] + ".json",
+                stats_folder 
+                + cur_date
+                + "_qos" 
+                + str(userdata["qos"])
+                + "_" + userdata['label']
+                + ("_tls" if userdata["tls"] else "") 
+                + ".json"
+                ,
             )
 
         # Stop disconnect thread, blocks until disconnect thread has been stopped

@@ -194,7 +194,14 @@ if __name__ == "__main__":
         pub_delay_stats = calc_stats(list_data)
 
         stats_folder = "summary/"
-        stats_fname = stats_folder + userdata["label"] + ".json"
+        stats_fname = (
+            stats_folder 
+            + "_qos" 
+            + str(userdata["qos"])
+            + "_" + userdata['label']
+            + ("_tls" if userdata["tls"] else "") 
+            + ".json"
+            )
 
         if not os.path.isdir(stats_folder):
             os.mkdir(stats_folder)

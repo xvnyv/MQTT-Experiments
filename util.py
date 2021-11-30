@@ -13,7 +13,7 @@ transport = "websockets"
 # hostname = "ec2-3-137-165-98.us-east-2.compute.amazonaws.com"
 # port = 1883
 # transport = "tcp"
-keepalive = 60
+keepalive = 300
 
 
 def parse_yaml(fname, userdata, caller):
@@ -38,9 +38,10 @@ def dump_data(subfolder, data_dump, cur_date, userdata):
     data_fname = (
         data_folder
         + cur_date
-        + "_qos-"
+        + "_qos"
         + str(userdata["qos"])
-        + f"_netcond-{userdata['label']}"
+        + "_" + userdata['label']
+        + ("_tls" if userdata["tls"] else "")
         + ".json"
     )
     if not os.path.isdir(data_folder):
