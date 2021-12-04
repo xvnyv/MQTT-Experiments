@@ -1,5 +1,9 @@
 # Networks Project
 
+Raw data and plots for final experiments can be found here: https://drive.google.com/drive/folders/1guFbEUKBr7Eck9_k3m2HmrLUqBEW8p2g?usp=sharing
+
+## Setup Description
+
 Mosuqitto broker deployed on EC2. Scripts for Paho clients are included in this repo.
 
 Both broker and clients are using MQTT v5. Clients connect to the broker with the clean start flag set to 0 and session expiry interval set to 30s. This ensures that when using QoS 1 or 2, the session state will be restored for a client who disconnects and reconnects with the same client ID within 30s (ie. client will receive all the messages that were published during the time that it was disconnected).
