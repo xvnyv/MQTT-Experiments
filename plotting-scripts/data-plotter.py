@@ -9,11 +9,11 @@ test_var = "bandwidth"  # stability, loss, bandwidth
 metric = "e2e_delay"  # pub_delay, e2e_delay
 plot_type = "multi"  # indiv, multi
 VAR = "0.01KB"  # optional to specify var, only if label field is not used else set to None
+html_dir = "data-html"
+data_dir = "data-0.2KB"
 
 # DO NOT EDIT FROM HERE ONWARDS
 cur_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-html_dir = "data-html"
-data_dir = "data-0.2KB"
 params = {
     "pub_delay": {
         "title": "Publishing Delay (ms)",
