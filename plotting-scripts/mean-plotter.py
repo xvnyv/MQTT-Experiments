@@ -2,26 +2,35 @@ from typing import Any, Dict, List
 from statistics import mean
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 import os
 import json
 
 # EDIT THESE VALUES
-# directory = "summaries"
+# test_var = "loss"
+# directory = "loss-summaries"
 # x_data = [0, 15, 30, 45, 60]
 # x_title = "Packet Loss (%)"
 # labels = ["loss_0", "loss15", "loss30", "loss45", "loss60"]
-directory = "summary"
-x_data = [0, 2, 3.33, 10, 20]
-x_title = "Disconnect Frequency (%)"
-labels = [
-    "disconnect_never",
-    "disconnect_1_in_50",
-    "disconnect_1_in_30",
-    "disconnect_1_in_10",
-    "disconnect_1_in_5",
-]
+
+test_var = "bandwidth"
+directory = "Data-0.1-0.01-0.2/summary"
+x_data = [0.01, 0.1, 0.2]
+x_title = "Bandwidth (KB)"
+labels = ["0.01KB", "0.1KB", "0.2KB"]
+
+# test_var = "stability"
+# directory = "summary"
+# x_data = [0, 2, 3.33, 10, 20]
+# x_title = "Disconnect Frequency (%)"
+# labels = [
+#     "disconnect_never",
+#     "disconnect_1_in_50",
+#     "disconnect_1_in_30",
+#     "disconnect_1_in_10",
+#     "disconnect_1_in_5",
+# ]
+html_dir = "html"
 
 # DO NOT EDIT FROM HERE ONWARDS
 test_repetitions = 5
@@ -162,7 +171,7 @@ def create_indiv_figure(data: Dict[str, List], figure_params=None):
                 row=row_col[i][0],
                 col=row_col[i][1],
             )
-    fig.write_html("html/" + figure_parameters["indiv_filename"] + ".html")
+    fig.write_html(f"{html_dir}/{test_var}-{figure_parameters['indiv_filename']}.html")
 
 
 def create_agg_figure(data: Dict[str, List], figure_params=None):
@@ -182,7 +191,7 @@ def create_agg_figure(data: Dict[str, List], figure_params=None):
                 name=k,
             )
         )
-    fig.write_html("html/" + figure_parameters["agg_filename"] + ".html")
+    fig.write_html(f"{html_dir}/{test_var}-{figure_parameters['agg_filename']}.html")
 
 
 def read_data():
@@ -214,7 +223,7 @@ def read_data():
 def format_data(d):
     output_d = {}
     for k, v in d.items():
-        formatted_data = [[0] * test_repetitions for _ in range(len(x_data))]
+        formatted_data = [[0] * len(x_data) for _ in range(test_repetitions)]
         for label, val_arr in v.items():
             for i, val in enumerate(val_arr):
                 formatted_data[i][labels.index(label)] = val
@@ -231,8 +240,8 @@ def aggregate_data(d):
 
 def main():
     read_data()
-    if not os.path.isdir("html/"):
-        os.makedirs("html/")
+    if not os.path.isdir(html_dir):
+        os.makedirs(html_dir)
     for metric in test_metrics:
         formatted_d = format_data(metric["data"])
         create_indiv_figure(formatted_d, metric["figure_parameters"])
