@@ -157,7 +157,9 @@ if __name__ == "__main__":
             # client disconnects and loop stops --> initiate reconnect after disconnect_duration
             time.sleep(userdata["disconnect_duration"])
             connected = False
+            userdata["conn_time"] = get_time()
             while not connected:
+                userdata["conn_tries"] += 1
                 try:
                     client.reconnect()
                     connected = True
@@ -182,14 +184,15 @@ if __name__ == "__main__":
 
             stats_folder = "summary/"
             stats_fname = (
-                stats_folder 
-                + "_qos" 
+                stats_folder
+                + "_qos"
                 + str(userdata["qos"])
-                + "_" + userdata['label']
-                + ("_tls" if userdata["tls"] else "") 
+                + "_"
+                + userdata["label"]
+                + ("_tls" if userdata["tls"] else "")
                 + ".json"
-                )
-                
+            )
+
             if not os.path.isdir(stats_folder):
                 os.mkdir(stats_folder)
 
@@ -217,14 +220,14 @@ if __name__ == "__main__":
 
             os.rename(
                 stats_fname,
-                stats_folder 
+                stats_folder
                 + cur_date
-                + "_qos" 
+                + "_qos"
                 + str(userdata["qos"])
-                + "_" + userdata['label']
-                + ("_tls" if userdata["tls"] else "") 
-                + ".json"
-                ,
+                + "_"
+                + userdata["label"]
+                + ("_tls" if userdata["tls"] else "")
+                + ".json",
             )
 
         # Stop disconnect thread, blocks until disconnect thread has been stopped

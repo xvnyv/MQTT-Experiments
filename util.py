@@ -13,7 +13,7 @@ transport = "websockets"
 # hostname = "ec2-3-137-165-98.us-east-2.compute.amazonaws.com"
 # port = 1883
 # transport = "tcp"
-keepalive = 300
+keepalive = 60
 
 
 def parse_yaml(fname, userdata, caller):
@@ -40,7 +40,8 @@ def dump_data(subfolder, data_dump, cur_date, userdata):
         + cur_date
         + "_qos"
         + str(userdata["qos"])
-        + "_" + userdata['label']
+        + "_"
+        + userdata["label"]
         + ("_tls" if userdata["tls"] else "")
         + ".json"
     )
@@ -61,7 +62,7 @@ def calc_stats(dataset, parameter="time_diff"):
             total_diff += pkt[parameter]
             data_points.append(pkt[parameter])
 
-    count = len(dataset)
+    count = len(data_points)
     std_deviation = statistics.stdev(data_points) if count > 1 else 0
     max_point = max(data_points)
     min_point = min(data_points)
