@@ -1,14 +1,46 @@
-# Networks Project
+# MQTT QoS and TLS Research
 
-Raw data and plots for final experiments can be found here: https://drive.google.com/drive/folders/1guFbEUKBr7Eck9_k3m2HmrLUqBEW8p2g?usp=sharing
+As part of the 50.012 module in Fall 2021, my team chose to examine how the performance of the MQTT protocol is affected by the 3 levels of QoS and the addition of TLS under different network conditions. 
 
-## Setup Description
+## Background
+Theory suggests that lower QoS levels are typically used under stable network conditions, and higher QoS levels are used under unstable network conditions with the aim of minimizing packet loss. However, in practice, there is a trade-off between the performance and reliability of data transfer. As such, the team is interested in finding out the relationship between performance and reliability, and the extent to which performance is sacrificed to achieve reliability.
 
-Mosuqitto broker deployed on EC2. Scripts for Paho clients are included in this repo.
+Messages sent via MQTT are unencrypted and in plaintext. Since MQTT uses TCP/IP, the messages will pass through many infrastructure components like routers and Internet Exchange Points (IXPs) before reaching the target (The HiveHQ Team, 2015). As such, it is good practice to use Transport Layer Security (TLS) to provide a secure communication channel between the clients and server, especially if sensitive information is being transmitted. However, the usage of TLS would also impose additional overhead. Therefore, the team is interested in finding out how much overhead the addition of TLS will impose, and to what extent would the overhead affect the performance of MQTT across the different QoS levels and network conditions.
 
-Both broker and clients are using MQTT v5. Clients connect to the broker with the clean start flag set to 0 and session expiry interval set to 30s. This ensures that when using QoS 1 or 2, the session state will be restored for a client who disconnects and reconnects with the same client ID within 30s (ie. client will receive all the messages that were published during the time that it was disconnected).
+## Experiment Setup
 
-Initial experiment was run with the broker deployed on EC2 and both publisher and subscriber client scripts were run locally from my Ubuntu VM. Simulated packet loss using `tc` was done on the Ubuntu VM, which means only outgoing packets from the publisher were affected. We might want to change where we simulate packet loss/low bandwidth to the host running NGINX so that packets from all 3 parties (ie. publisher, subscriber, broker) will be subjected to these conditions.
+### Broker and Clients
+A Mosquitto broker and 2 Paho clients were used to simulate publishing and subscribing.
+
+Both broker and clients used MQTT v5. Clients connected to the broker with the clean start flag set to 0 and session expiry interval set to 30s. This ensured that when using QoS 1 or 2, the session state will be restored for a client who disconnects and reconnects with the same client ID within 30s (ie. client will receive all the messages that were published during the time that it was disconnected).
+
+Both publisher and subscriber clients were run locally on the same device.
+
+### Nginx and TLS
+Nginx’s default behaviour blocks access to all ports that it is not monitoring. Since mosquitto runs on port 1883, it was necessary to create a passthrough from port 80 to port 1883. However, nginx did not accept external traffic since it does not support the MQTT protocol. Hence, the broker was set up to use the websockets protocol on port 8082. When a request was received by the nginx server, it would upgrade the protocol from HTTP to websockets and pass it on to the broker. The nginx proxy timeout was also set to 5min to prevent nginx from closing connections between the broker and clients prematurely.
+
+Let’s Encrypt was used to generate a TLS certificate. The above configuration was extended to listen to port 443 using the generated certificate.
+
+## Experiment Details
+
+To investigate the performance of MQTT across the different QoS levels and with the addition of TLS, my team decided to create 3 different scenarios under which we would vary QoS levels and the usage of TLS.
+- Network Stability (measured in terms of subscriber disconnect frequency)
+- Packet Loss
+- Bandwidth
+
+To evaluate the performance of MQTT, my team looked at the following metrics:
+- Publishing Delay
+  - The time taken for a publisher to complete its publishing process and discard the published message after calling the publish method provided by Paho. This means that publishing delay will take into account all publishing-related control packets.
+- End-to-End Delay
+  - The time taken from when the publisher publishes a message until the subscriber successfully receives it.
+- Packet Loss Percentage
+  - the percentage of packets that were published by the publisher but not received by the subscriber.
+- Connecting Delay
+  - The time taken for the client to successfully connect to the broker.
+
+For more information about our experiment setup, methods and results, please visit the following links.
+- Report with details on our experiment methods and results can be found here: https://docs.google.com/document/d/1tTaTM5_rO4brFeQDLGxC4GMX1-WoC86r6TfwUJg9GPY/edit?usp=sharing 
+- Raw data and plots for final experiments can be found here: https://drive.google.com/drive/folders/1guFbEUKBr7Eck9_k3m2HmrLUqBEW8p2g?usp=sharing
 
 ## Running Clients: w/o Docker
 
